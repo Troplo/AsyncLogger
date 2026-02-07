@@ -49,9 +49,15 @@ target_link_libraries(${PROJECT_NAME} Threads::Threads)
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 
+configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/common.hpp.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/src/common.hpp"
+        @ONLY
+)
+
 target_include_directories(${PROJECT_NAME} PRIVATE "${PUBLIC_HEADER_DIR}/AsyncLogger/")
 target_include_directories(${PROJECT_NAME} PUBLIC "${SRC_DIR}")
-target_precompile_headers(${PROJECT_NAME} PRIVATE "${SRC_DIR}/common.hpp")
+target_precompile_headers(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/src/common.hpp")
 
 # public stuff
 set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${PUBLIC_HEADER_FILES}")

@@ -6,3 +6,5 @@
 #include <string>
 #include <sstream>
 #include <thread>
+
+#define ENABLE_SOURCE_LOGGING @ENABLE_SOURCE_LOGGING@
