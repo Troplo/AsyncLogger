@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 option(USE_FMT "Use fmt::format instead of std::format" 0)
+option(ENABLE_SOURCE_LOGGING "Enable source logging" 1)
 
 project(AsyncLogger LANGUAGES CXX VERSION 0.0.1 DESCRIPTION "A lightweight C++20 asyncronous logger.")
 

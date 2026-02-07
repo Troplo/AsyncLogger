@@ -11,7 +11,11 @@ namespace al
 	class LogCapture
 	{
 	public:
-		LogCapture(const eLogLevel level, std::source_location&& location, std::optional<std::shared_ptr<LogStream> const> stream);
+		LogCapture(const eLogLevel level,
+#if ENABLE_SOURCE_LOGGING
+		std::source_location&& location,
+#endif
+		std::optional<std::shared_ptr<LogStream> const> stream);
 		~LogCapture();
 
 		template<typename T>
@@ -20,7 +24,9 @@ namespace al
 	private:
 		const eLogLevel m_Level;
 		std::chrono::system_clock::time_point m_Timestamp;
+#if ENABLE_SOURCE_LOGGING
 		std::source_location m_Location;
+#endif
 		std::ostringstream m_Stream;
 		std::optional<std::shared_ptr<LogStream> const> m_LogStream;
 	};

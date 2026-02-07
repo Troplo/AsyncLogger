@@ -4,9 +4,17 @@
 
 namespace al
 {
-    LogCapture LOG(const eLogLevel level, std::source_location location)
+    LogCapture LOG(const eLogLevel level
+#if ENABLE_SOURCE_LOGGING
+        , std::source_location location
+#endif
+        )
     {
-        return LogCapture{ level, std::move(location), std::nullopt };
+        return LogCapture{ level,
+#if ENABLE_SOURCE_LOGGING
+            std::move(location),
+#endif
+            std::nullopt };
     }
 
     void Logger::AddSink(LogSink sink)
@@ -31,10 +39,16 @@ namespace al
 
     void Logger::PushMessage(const eLogLevel level,
                              std::chrono::system_clock::time_point &&timestamp,
+#if ENABLE_SOURCE_LOGGING
                              std::source_location &&location,
+#endif
                              std::string &&message, std::optional<std::shared_ptr<LogStream> const> &&stream) noexcept
     {
-        auto msgPtr = std::make_shared<LogMessage>(level, std::move(timestamp), std::move(location), std::move(message), std::move(stream));
+        auto msgPtr = std::make_shared<LogMessage>(level, std::move(timestamp),
+#if ENABLE_SOURCE_LOGGING
+            std::move(location),
+#endif
+            std::move(message), std::move(stream));
 
         Logger::GetInstance().QueueMessage(std::move(msgPtr));
     }
