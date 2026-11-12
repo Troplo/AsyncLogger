@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -16,3 +17,6 @@
 #include <vector>
 
 #cmakedefine01 ENABLE_SOURCE_LOGGING
+#ifndef DEFAULT_SCROLLBACK_LIMIT
+#define DEFAULT_SCROLLBACK_LIMIT @DEFAULT_SCROLLBACK_LIMIT@
+#endif

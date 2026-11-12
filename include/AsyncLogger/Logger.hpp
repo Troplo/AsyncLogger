@@ -13,6 +13,10 @@
 #ifndef ENABLE_SOURCE_LOGGING
     #define ENABLE_SOURCE_LOGGING 1
 #endif
+#ifndef DEFAULT_SCROLLBACK_LIMIT
+    #define DEFAULT_SCROLLBACK_LIMIT 100
+#endif
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -70,6 +74,23 @@ namespace al
         static void RegisterPathScope(std::string pathPrefix, const std::string& scopeName);
         static std::shared_ptr<LogScope> ResolveScopeFromPath(const std::string_view filePath);
 
+        // Scrollback Configuration & History Retrieval
+        static void SetDefaultScrollbackLimit(size_t limit);
+        static size_t GetDefaultScrollbackLimit();
+
+        static void SetScopeScrollbackLimit(const std::string& scopeName, size_t limit);
+        static size_t GetScopeScrollbackLimit(const std::string& scopeName);
+
+        static std::vector<LogMessagePtr> GetEntries(const std::optional<std::string_view>& scopeName = std::nullopt);
+        static std::vector<LogMessagePtr> GetScopeEntries(const std::string& scopeName);
+        static std::vector<LogMessagePtr> GetGlobalEntries();
+        static std::vector<LogMessagePtr> GetAllEntries();
+
+        static void ClearEntries(const std::optional<std::string_view>& scopeName = std::nullopt);
+        static void ClearScopeEntries(const std::string& scopeName);
+        static void ClearGlobalEntries();
+        static void ClearAllEntries();
+
     protected:
         static void PushMessage(const eLogLevel level, std::chrono::system_clock::time_point&& timestamp,
 #if ENABLE_SOURCE_LOGGING
@@ -81,6 +102,7 @@ namespace al
 
     private:
         void CallSinks(LogMessagePtr msgPtr);
+        void StoreMessage(const LogMessagePtr& msgPtr);
         void DestroyImpl();
         void InitImpl();
         /**
@@ -111,6 +133,10 @@ namespace al
 
         std::vector<std::pair<std::string, std::shared_ptr<LogStream>>> m_PathScopes;
         std::mutex m_PathMutex;
+
+        std::atomic<size_t> m_DefaultScrollbackLimit{ DEFAULT_SCROLLBACK_LIMIT };
+        std::deque<LogMessagePtr> m_GlobalEntries;
+        mutable std::mutex m_GlobalEntriesMutex;
     };
 
     // Standard LOG(level)

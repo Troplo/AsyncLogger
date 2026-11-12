@@ -1,7 +1,9 @@
 #include "Logger.hpp"
 #include "LogCapture.hpp"
 #include "LogMessage.hpp"
+#include <algorithm>
 #include <fstream>
+#include <future>
 #include <iostream>
 
 namespace al
@@ -157,7 +159,7 @@ namespace al
             it->second->SetEnabled(enabled);
             return it->second;
         }
-        auto scope = std::make_shared<LogStream>(name, userData, enabled);
+        auto scope = std::make_shared<LogStream>(name, userData, enabled, instance.m_DefaultScrollbackLimit.load());
         instance.m_Scopes.emplace(name, scope);
         return scope;
     }
@@ -171,7 +173,7 @@ namespace al
         {
             return it->second;
         }
-        auto scope = std::make_shared<LogStream>(name, nullptr, defaultEnabled);
+        auto scope = std::make_shared<LogStream>(name, nullptr, defaultEnabled, instance.m_DefaultScrollbackLimit.load());
         instance.m_Scopes.emplace(name, scope);
         return scope;
     }
@@ -320,11 +322,22 @@ namespace al
 
     void Logger::FlushQueueImpl()
     {
-        while (!m_Queue.empty())
+        if (m_Running)
+        {
+            std::promise<void> promise;
+            auto future = promise.get_future();
+            m_Queue.push([&promise] {
+                promise.set_value();
+            });
+            future.wait();
+        }
+        else
         {
             std::function<void()> func;
-            m_Queue.wait_and_pop(func);
-            func();
+            while (m_Queue.try_and_pop(func))
+            {
+                func();
+            }
         }
     }
 
@@ -332,7 +345,170 @@ namespace al
     {
         m_Queue.push([this, msgPtr = std::move(msgPtr)]
         {
+            StoreMessage(msgPtr);
             CallSinks(msgPtr);
         });
+    }
+
+    void Logger::StoreMessage(const LogMessagePtr& msgPtr)
+    {
+        if (!msgPtr)
+            return;
+
+        if (msgPtr->Stream().has_value() && *msgPtr->Stream())
+        {
+            (*msgPtr->Stream())->StoreEntry(msgPtr);
+        }
+        else
+        {
+            const size_t limit = m_DefaultScrollbackLimit.load();
+            if (limit == 0)
+                return;
+
+            std::lock_guard<std::mutex> lock(m_GlobalEntriesMutex);
+            m_GlobalEntries.push_back(msgPtr);
+            while (m_GlobalEntries.size() > limit)
+            {
+                m_GlobalEntries.pop_front();
+            }
+        }
+    }
+
+    void Logger::SetDefaultScrollbackLimit(size_t limit)
+    {
+        auto& instance = GetInstance();
+        instance.m_DefaultScrollbackLimit.store(limit);
+        std::lock_guard<std::mutex> lock(instance.m_GlobalEntriesMutex);
+        if (limit == 0)
+        {
+            instance.m_GlobalEntries.clear();
+        }
+        else
+        {
+            while (instance.m_GlobalEntries.size() > limit)
+            {
+                instance.m_GlobalEntries.pop_front();
+            }
+        }
+    }
+
+    size_t Logger::GetDefaultScrollbackLimit()
+    {
+        return GetInstance().m_DefaultScrollbackLimit.load();
+    }
+
+    void Logger::SetScopeScrollbackLimit(const std::string& scopeName, size_t limit)
+    {
+        auto scope = GetOrCreateScope(scopeName);
+        if (scope)
+        {
+            scope->SetScrollbackLimit(limit);
+        }
+    }
+
+    size_t Logger::GetScopeScrollbackLimit(const std::string& scopeName)
+    {
+        auto scope = GetScope(scopeName);
+        if (scope)
+        {
+            return scope->ScrollbackLimit();
+        }
+        return GetDefaultScrollbackLimit();
+    }
+
+    std::vector<LogMessagePtr> Logger::GetScopeEntries(const std::string& scopeName)
+    {
+        auto scope = GetScope(scopeName);
+        if (scope)
+        {
+            return scope->GetEntries();
+        }
+        return {};
+    }
+
+    std::vector<LogMessagePtr> Logger::GetGlobalEntries()
+    {
+        auto& instance = GetInstance();
+        std::lock_guard<std::mutex> lock(instance.m_GlobalEntriesMutex);
+        return std::vector<LogMessagePtr>(instance.m_GlobalEntries.begin(), instance.m_GlobalEntries.end());
+    }
+
+    std::vector<LogMessagePtr> Logger::GetEntries(const std::optional<std::string_view>& scopeName)
+    {
+        if (scopeName.has_value() && !scopeName->empty())
+        {
+            return GetScopeEntries(std::string(*scopeName));
+        }
+        return GetGlobalEntries();
+    }
+
+    std::vector<LogMessagePtr> Logger::GetAllEntries()
+    {
+        auto& instance = GetInstance();
+        std::vector<LogMessagePtr> all;
+
+        {
+            std::lock_guard<std::mutex> lock(instance.m_GlobalEntriesMutex);
+            all.insert(all.end(), instance.m_GlobalEntries.begin(), instance.m_GlobalEntries.end());
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(instance.m_ScopeMutex);
+            for (const auto& [name, scope] : instance.m_Scopes)
+            {
+                auto entries = scope->GetEntries();
+                all.insert(all.end(), entries.begin(), entries.end());
+            }
+        }
+
+        std::sort(all.begin(), all.end(), [](const LogMessagePtr& a, const LogMessagePtr& b) {
+            return a->Timestamp() < b->Timestamp();
+        });
+
+        return all;
+    }
+
+    void Logger::ClearScopeEntries(const std::string& scopeName)
+    {
+        auto scope = GetScope(scopeName);
+        if (scope)
+        {
+            scope->ClearEntries();
+        }
+    }
+
+    void Logger::ClearGlobalEntries()
+    {
+        auto& instance = GetInstance();
+        std::lock_guard<std::mutex> lock(instance.m_GlobalEntriesMutex);
+        instance.m_GlobalEntries.clear();
+    }
+
+    void Logger::ClearAllEntries()
+    {
+        auto& instance = GetInstance();
+        {
+            std::lock_guard<std::mutex> lock(instance.m_GlobalEntriesMutex);
+            instance.m_GlobalEntries.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lock(instance.m_ScopeMutex);
+            for (const auto& [name, scope] : instance.m_Scopes)
+            {
+                scope->ClearEntries();
+            }
+        }
+    }
+
+    void Logger::ClearEntries(const std::optional<std::string_view>& scopeName)
+    {
+        if (scopeName.has_value() && !scopeName->empty())
+        {
+            ClearScopeEntries(std::string(*scopeName));
+        }
+        else
+        {
+            ClearGlobalEntries();
+        }
     }
 }
