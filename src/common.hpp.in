@@ -1,10 +1,18 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <functional>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <source_location>
-#include <string>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <unordered_map>
+#include <vector>
 
-#define ENABLE_SOURCE_LOGGING @ENABLE_SOURCE_LOGGING@
+#cmakedefine01 ENABLE_SOURCE_LOGGING
